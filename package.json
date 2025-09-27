@@ -1,0 +1,15 @@
+{
+  "name": "douyin-parser-vercel",
+  "version": "1.0.0",
+  "description": "抖音视频解析API - Vercel版本",
+  "main": "api/parse.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Build complete'",
+    "start": "vercel dev"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": "18.x"
+  }
+}
