@@ -9,6 +9,16 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // GET请求返回简单状态
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      success: false,
+      error: '只允许 POST 请求',
+      status: 'API 运行正常',
+      timestamp: new Date().toISOString()
+    });
+  }
+
   // 只允许 POST 请求
   if (req.method !== 'POST') {
     return res.status(405).json({
@@ -34,8 +44,13 @@ export default async function handler(req, res) {
     const normalizedUrl = normalizeDouyinUrl(videoUrl);
     console.log('标准化链接:', normalizedUrl);
     
-    // 调用解析服务
-    const result = await parseDouyinVideo(normalizedUrl);
+    // 添加超时控制的解析
+    const result = await Promise.race([
+      parseDouyinVideo(normalizedUrl),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('请求超时')), 25000)
+      )
+    ]);
     
     if (result.success) {
       return res.status(200).json({
@@ -61,6 +76,14 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('处理错误:', error.message);
+    
+    if (error.message === '请求超时') {
+      return res.status(408).json({
+        code: 1,
+        msg: '请求超时，请稍后重试'
+      });
+    }
+    
     return res.status(500).json({
       code: 1,
       msg: '服务器错误: ' + error.message
@@ -102,9 +125,13 @@ function normalizeDouyinUrl(url) {
   return url;
 }
 
-// 解析抖音视频
+// 解析抖音视频（优化版本）
 async function parseDouyinVideo(url) {
   try {
+    // 创建一个带超时的 fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒超时
+    
     const response = await fetch('https://min.taoanlife.com/dy/api/de-url', {
       method: 'POST',
       headers: {
@@ -115,8 +142,15 @@ async function parseDouyinVideo(url) {
       body: JSON.stringify({
         share_url: url,
         de_type: 1
-      })
+      }),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
     const data = await response.json();
     console.log('API响应:', data);
@@ -148,6 +182,14 @@ async function parseDouyinVideo(url) {
 
   } catch (error) {
     console.error('解析失败:', error);
+    
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        error: '第三方API响应超时'
+      };
+    }
+    
     return {
       success: false,
       error: '网络请求失败: ' + error.message
